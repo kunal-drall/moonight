@@ -137,21 +137,42 @@ await protocol.castVote(
 
 ## 📊 Trust Scoring System
 
-### Scoring Factors (0-1000 scale)
-- **Payment History (35%)**: On-time payment track record
-- **Circle Participation (20%)**: Active participation in lending circles
-- **Stake Commitment (15%)**: Amount staked relative to capacity
-- **Governance Activity (10%)**: Participation in protocol governance
-- **Cross-Chain Reputation (10%)**: Reputation from other blockchains
-- **Tenure (10%)**: Time active in the system
+### New ZK Trust Scoring Algorithm (0-1000 scale)
 
-### Score Ranges
-- **900-1000**: Excellent
-- **800-899**: Very Good
-- **700-799**: Good
-- **600-699**: Fair
-- **400-599**: Poor
-- **0-399**: Very Poor
+The Moonight Protocol implements a sophisticated Zero-Knowledge trust scoring system that evaluates creditworthiness while preserving privacy.
+
+#### Scoring Components & Weights
+- **Payment Reliability (40%)**: Payment timeliness, consistency, and reliability patterns
+- **Circle Completion History (30%)**: Successfully completing lending circles, helping other members
+- **DeFi Experience (20%)**: Cross-chain DeFi activity, protocol usage, portfolio management
+- **Social Verification (10%)**: Identity verification, community endorsements, social connections
+
+#### Trust Tier System
+- **Newcomer (0-199)**: Entry level with basic participation rights
+  - Stake: 0.05 tokens | Benefits: Basic circle participation
+- **Apprentice (200-399)**: Growing trust with medium circle access  
+  - Stake: 0.1 tokens | Benefits: Medium circles, basic features
+- **Builder (400-599)**: Can create small circles and priority selection
+  - Stake: 0.25 tokens | Benefits: Create small circles, priority access
+- **Guardian (600-799)**: Full circle access with guarantor capabilities
+  - Stake: 0.5 tokens | Benefits: Medium circles, guarantor role, governance
+- **Sage (800-899)**: Advanced features and large circle creation
+  - Stake: 1 token | Benefits: Large circles, advanced features, proposals  
+- **Lunar (900-1000)**: Premium tier with cross-chain benefits
+  - Stake: 2 tokens | Benefits: All features, reduced fees, premium access
+
+#### Privacy-Preserving Features
+- **Zero-Knowledge Proofs**: Score calculations proven without revealing transaction details
+- **Encrypted Witness Data**: Private scoring factors protected by encryption
+- **Commitment Schemes**: Cryptographic commitments for score verification
+- **Nullifier Prevention**: Prevents proof replay attacks and double-spending
+
+#### Score Verification
+The system generates verifiable ZK proofs that demonstrate:
+- Score was calculated using the correct algorithm
+- All components were properly weighted (40%+30%+20%+10%=100%)
+- Member meets tier requirements without revealing exact values
+- No transaction details or sensitive data exposed
 
 ## 🧪 Testing
 
