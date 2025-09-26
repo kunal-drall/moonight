@@ -8,6 +8,8 @@ export { ZKProofVerifier } from './utils/zk-verifier';
 export { PrivacyUtils } from './utils/privacy';
 export { TrustScoreCalculator } from './utils/trust-score';
 export { CrossChainManager } from './utils/cross-chain';
+export { BiddingCircuit } from './circuits/BiddingCircuit';
+export { BidAuctionManager } from './auctions/BidAuctionManager';
 
 export * from './types';
 
