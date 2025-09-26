@@ -83,10 +83,22 @@ export class MoonightProtocol {
       throw new Error('Invalid creator proof');
     }
 
-    // Check creator's trust score
-    const creatorScore = this.state.trustScores.get(creatorHash) || 700; // Default higher score for demo
-    if (creatorScore < 600) {
-      throw new Error('Insufficient trust score to create circle');
+    // Check creator's tier permissions for circle creation
+    if (!await this.checkTierPermissions(creatorHash, 'CREATE_CIRCLE')) {
+      const tier = await this.getMemberTier(creatorHash);
+      throw new Error(`Insufficient tier (${tier.name}) to create circle. Minimum required: Builder`);
+    }
+
+    // Check if creator can create large circles (based on maxMembers)
+    if (params.maxMembers > 8 && !await this.checkTierPermissions(creatorHash, 'CREATE_LARGE_CIRCLE')) {
+      throw new Error('Only Sage tier and above can create large circles (>8 members)');
+    }
+
+    // Verify stake requirement for tier (use stake requirement from params as baseline)
+    const creatorScore = this.state.trustScores.get(creatorHash) || await this.trustCalculator.calculateScore(creatorHash);
+    const requiredStakeForTier = this.trustCalculator.getStakeRequirement(creatorScore);
+    if (params.stakeRequirement < requiredStakeForTier) {
+      throw new Error(`Circle stake requirement ${params.stakeRequirement.toString()} wei is below tier requirement: ${requiredStakeForTier.toString()} wei`);
     }
 
     const circleId = await this.privacyUtils.generateCircleId(creatorHash, params);
@@ -110,6 +122,25 @@ export class MoonightProtocol {
     this.state.circles.set(circleId, circle);
     this.state.bidCommitments.set(circleId, []);
     this.state.paymentRecords.set(circleId, []);
+
+    // Update trust score for circle creation
+    const newScore = await this.trustCalculator.updateScoreForAction(
+      creatorHash,
+      'CIRCLE_COMPLETION', // Use circle completion for creating
+      creatorScore
+    );
+    
+    await this.updateTrustScore({
+      targetMemberHash: creatorHash,
+      newScore,
+      calculationProof: await this.trustCalculator.generateProof(creatorHash, newScore - creatorScore),
+      witnessData: await this.privacyUtils.encryptWitnessData({
+        action: 'CIRCLE_CREATION',
+        circleId,
+        maxMembers: params.maxMembers,
+        timestamp: Date.now()
+      })
+    });
 
     return circleId;
   }
@@ -135,12 +166,20 @@ export class MoonightProtocol {
       throw new Error('Invalid membership proof');
     }
 
-    // Check trust score requirement (privately)
+    // Check trust score and tier requirements
     const memberHash = params.identityCommitment; // Use identity commitment directly for demo
     const trustScore = await this.trustCalculator.calculateScore(memberHash);
+    const tier = this.trustCalculator.getTrustTier(trustScore);
     
-    if (trustScore < 400) { // Lower requirement for demo
-      throw new Error('Insufficient trust score');
+    // Verify minimum stake requirement for tier
+    if (!await this.verifyStakeRequirement(memberHash, params.stakeAmount)) {
+      const requiredStake = this.trustCalculator.getStakeRequirement(trustScore);
+      throw new Error(`Insufficient stake for ${tier.name} tier. Required: ${requiredStake.toString()} wei`);
+    }
+    
+    // Check if tier allows joining based on circle size
+    if (circle.maxMembers > 8 && trustScore < 400) { // Large circles need Builder tier minimum
+      throw new Error('Large circles require minimum Builder tier (400+ score)');
     }
 
     // Create member record
@@ -258,15 +297,23 @@ export class MoonightProtocol {
     existingPayments.push(paymentRecord);
     this.state.paymentRecords.set(params.circleId, existingPayments);
 
-    // Update trust score for successful payment
+    // Update trust score for successful payment using proper action-based scoring
+    const currentScore = this.state.trustScores.get(payerHash) || 500;
+    const newScore = await this.trustCalculator.updateScoreForAction(
+      payerHash,
+      'PAYMENT_SUCCESS',
+      currentScore
+    );
+    
     await this.updateTrustScore({
       targetMemberHash: payerHash,
-      newScore: Math.min(1000, (this.state.trustScores.get(payerHash) || 500) + 10),
-      calculationProof: await this.trustCalculator.generateProof(payerHash, 10),
+      newScore,
+      calculationProof: await this.trustCalculator.generateProof(payerHash, newScore - currentScore),
       witnessData: await this.privacyUtils.encryptWitnessData({
-        action: 'payment',
+        action: 'PAYMENT_SUCCESS',
         amount: circle.monthlyAmount,
-        onTime: true
+        onTime: true,
+        timestamp: Date.now()
       })
     });
 
@@ -281,8 +328,8 @@ export class MoonightProtocol {
       throw new Error('Trust score must be between 0 and 1000');
     }
 
-    // Verify calculation proof
-    if (!await this.zkVerifier.verifyTrustScoreProof(
+    // Verify calculation proof using our trust score calculator
+    if (!await this.trustCalculator.verifyCalculation(
       params.targetMemberHash,
       params.newScore,
       params.calculationProof
@@ -303,6 +350,31 @@ export class MoonightProtocol {
     }
 
     return true;
+  }
+
+  /**
+   * Check if member meets tier requirements for action
+   */
+  async checkTierPermissions(memberHash: string, action: string): Promise<boolean> {
+    const trustScore = this.state.trustScores.get(memberHash) || 0;
+    return this.trustCalculator.canPerformAction(trustScore, action);
+  }
+
+  /**
+   * Get member's current tier information
+   */
+  async getMemberTier(memberHash: string): Promise<any> {
+    const trustScore = this.state.trustScores.get(memberHash) || 0;
+    return this.trustCalculator.getTrustTier(trustScore);
+  }
+
+  /**
+   * Verify member meets minimum stake requirement for their tier
+   */
+  async verifyStakeRequirement(memberHash: string, stakeAmount: bigint): Promise<boolean> {
+    const trustScore = this.state.trustScores.get(memberHash) || 0;
+    const requiredStake = this.trustCalculator.getStakeRequirement(trustScore);
+    return stakeAmount >= requiredStake;
   }
 
   /**
