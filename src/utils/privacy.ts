@@ -272,7 +272,14 @@ export class PrivacyUtils {
       voterSecret
     };
 
-    return await this.generateCommitment(voteData);
+    const commitment = await this.generateCommitment(voteData);
+    
+    // Return properly formatted JSON
+    return JSON.stringify({
+      choice: vote,
+      randomness,
+      commitment
+    });
   }
 
   /**

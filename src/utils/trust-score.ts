@@ -310,6 +310,20 @@ export class TrustScoreCalculator {
   }
 
   /**
+   * Get all score interpretations
+   */
+  getScoreInterpretations(): Record<string, string> {
+    return {
+      '900-1000': 'Excellent',
+      '800-899': 'Very Good', 
+      '700-799': 'Good',
+      '600-699': 'Fair',
+      '400-599': 'Poor',
+      '0-399': 'Very Poor'
+    };
+  }
+
+  /**
    * Get minimum score requirements for different actions
    */
   getMinimumScoreRequirements(): Record<string, number> {
