@@ -9,7 +9,7 @@ import {
   createMembershipProof,
   DEFAULT_PRIVACY_PARAMS,
   DEFAULT_CIRCLE_PARAMS
-} from '../src';
+} from '../index';
 
 describe('Moonight Protocol', () => {
   let protocol: any;
