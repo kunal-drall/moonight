@@ -745,6 +745,49 @@ export class ZKProofVerifier {
   }
 
   /**
+   * Verify wallet ownership proof
+   */
+  async verifyWalletOwnershipProof(
+    contributorHash: string,
+    chainId: string,
+    ownershipProof: string
+  ): Promise<boolean> {
+    try {
+      const proofData = JSON.parse(ownershipProof);
+
+      // Verify proof structure
+      if (!proofData.contributorCommitment || !proofData.walletProof || !proofData.balanceWitness) {
+        return false;
+      }
+
+      // Verify contributor commitment matches
+      if (proofData.contributorCommitment !== contributorHash) {
+        return false;
+      }
+
+      // Verify chain ID
+      if (proofData.chainId !== chainId) {
+        return false;
+      }
+
+      // Verify wallet ownership proof
+      if (!proofData.walletProof.valid) {
+        return false;
+      }
+
+      // Verify balance witness is properly formatted
+      if (!proofData.balanceWitness.balance || !proofData.balanceWitness.randomness) {
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Wallet ownership proof verification failed:', error);
+      return false;
+    }
+  }
+
+  /**
    * Verify cross-chain route proof
    */
   async verifyCrossChainRouteProof(

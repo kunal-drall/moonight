@@ -269,3 +269,156 @@ export interface PrivateTransactionMix {
   readonly anonymitySetSize: number;
   readonly mixingFee: bigint;
 }
+
+// Payment Processor Types
+export interface PaymentProcessorState {
+  readonly processorId: string;
+  readonly supportedChains: string[];
+  readonly walletConnections: Map<string, Map<string, WalletConnection>>;
+  readonly pendingPayments: Map<string, PartialPayment[]>;
+  readonly paymentHistory: Map<string, EncryptedPaymentRecord[]>;
+  readonly encryptedRecords: Map<string, EncryptedPaymentRecord>;
+  failureQueue: PaymentAttempt[]; // Made mutable for updates
+  readonly retryPolicy: PaymentRetryPolicy;
+}
+
+export interface PaymentCollectionParams {
+  readonly contributorHash: string;
+  readonly circleId: string;
+  readonly round: number;
+  readonly requiredAmount: bigint;
+  readonly recipientCommitment: string;
+  readonly allowPartialPayment?: boolean;
+  readonly maxRetries?: number;
+  readonly priority?: 'low' | 'normal' | 'high';
+}
+
+export interface PaymentCollectionResult {
+  readonly collectionId: string;
+  readonly success: boolean;
+  readonly totalCollected?: bigint;
+  readonly paymentBreakdown?: Map<string, bigint>;
+  readonly anonymityScore?: number;
+  readonly settlementProof?: string;
+  readonly processingTime?: number;
+  readonly error?: string;
+  readonly retryScheduled?: boolean;
+  readonly isPartialPayment?: boolean;
+  readonly shortfall?: bigint;
+  readonly nextPaymentDue?: number;
+}
+
+export interface WalletConnection {
+  readonly chainId: string;
+  readonly contributorHash: string;
+  readonly balanceCommitment: string;
+  readonly ownershipProof: string;
+  readonly lastVerified: number;
+  readonly isActive: boolean;
+  readonly confidentialBalance: ConfidentialBalance;
+}
+
+export interface PaymentAttempt {
+  readonly attemptId: string;
+  readonly collectionId: string;
+  readonly params: PaymentCollectionParams;
+  attemptNumber: number;
+  readonly failureReason: PaymentFailureReason;
+  nextRetry: number;
+  readonly maxRetries: number;
+}
+
+export interface EncryptedPaymentRecord {
+  readonly recordId: string;
+  readonly contributorHash: string;
+  readonly circleId: string;
+  readonly round: number;
+  readonly encryptedAmount: string;
+  readonly encryptedBreakdown: string;
+  readonly anonymityScore: number;
+  readonly settlementProof: string;
+  readonly timestamp: number;
+  readonly paymentHash: string;
+}
+
+export type PaymentFailureReason = 
+  | 'INSUFFICIENT_BALANCE'
+  | 'NETWORK_ERROR'
+  | 'INVALID_PROOF'
+  | 'TIMEOUT'
+  | 'TEMPORARY_FAILURE'
+  | 'WALLET_CONNECTION_FAILED'
+  | 'CROSS_CHAIN_ERROR'
+  | 'INSUFFICIENT_GAS';
+
+export interface PartialPayment {
+  readonly paymentId: string;
+  readonly contributorHash: string;
+  readonly circleId: string;
+  readonly round: number;
+  readonly amountPaid: bigint;
+  readonly amountDue: bigint;
+  readonly shortfall: bigint;
+  readonly timestamp: number;
+  readonly nextPaymentDue: number;
+  readonly isPartial: boolean;
+}
+
+export interface PaymentRetryPolicy {
+  readonly maxAttempts: number;
+  readonly baseDelay: number;
+  readonly backoffMultiplier: number;
+  readonly maxDelay: number;
+}
+
+export interface PaymentSchedule {
+  readonly circleId: string;
+  readonly round: number;
+  readonly dueDate: number;
+  readonly amount: bigint;
+  readonly contributorHashes: string[];
+  readonly recipientHash: string;
+}
+
+export interface CollectionStatus {
+  readonly circleId: string;
+  readonly round: number;
+  readonly totalExpected: bigint;
+  totalCollected: bigint;
+  successfulPayments: number;
+  partialPayments: number;
+  failedPayments: number;
+  completionRate: number;
+}
+
+export interface CrossChainSettlement {
+  readonly settlementId: string;
+  readonly sourceChains: string[];
+  readonly targetChain: string;
+  readonly totalAmount: bigint;
+  readonly amountPerChain: Map<string, bigint>;
+  readonly settlementProofs: string[];
+  readonly anonymityScore: number;
+  readonly completionTime: number;
+}
+
+// Default privacy parameters for Midnight blockchain
+export const DEFAULT_PRIVACY_PARAMS = {
+  zkSnarkParams: 'groth16-bn254',
+  commitmentScheme: 'pedersen-blake2s',
+  nullifierDerivation: 'poseidon-hash',
+  proofVerificationKey: JSON.stringify({
+    protocol: 'groth16',
+    curve: 'bn128',
+    nPublic: 4,
+    vk_alpha_1: ['0x1', '0x2'],
+    vk_beta_2: [['0x3', '0x4'], ['0x5', '0x6']],
+    vk_gamma_2: [['0x7', '0x8'], ['0x9', '0xa']],
+    vk_delta_2: [['0xb', '0xc'], ['0xd', '0xe']],
+    vk_alphabeta_12: [
+      [['0xf', '0x10'], ['0x11', '0x12']],
+      [['0x13', '0x14'], ['0x15', '0x16']]
+    ],
+    IC: [['0x17', '0x18'], ['0x19', '0x1a'], ['0x1b', '0x1c'], ['0x1d', '0x1e']]
+  })
+};

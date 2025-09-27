@@ -309,6 +309,47 @@ export class PrivacyUtils {
     return results;
   }
 
+  /**
+   * Generate unique ID for payments and other entities
+   */
+  async generateId(): Promise<string> {
+    const crypto = require('crypto');
+    return crypto.randomBytes(16).toString('hex');
+  }
+
+  /**
+   * Encrypt data for privacy preservation
+   */
+  async encryptData(data: string, key?: string): Promise<string> {
+    const crypto = require('crypto');
+    
+    // Use provided key or generate one from privacy params
+    const encryptionKey = key || this.params.zkSnarkParams.substring(0, 32);
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipher('aes-256-cbc', encryptionKey);
+    
+    let encrypted = cipher.update(data, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    
+    return iv.toString('hex') + ':' + encrypted;
+  }
+
+  /**
+   * Decrypt data for authorized access
+   */
+  async decryptData(encryptedData: string, key?: string): Promise<string> {
+    const crypto = require('crypto');
+    
+    const [ivHex, encrypted] = encryptedData.split(':');
+    const encryptionKey = key || this.params.zkSnarkParams.substring(0, 32);
+    
+    const decipher = crypto.createDecipher('aes-256-cbc', encryptionKey);
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    
+    return decrypted;
+  }
+
   // Private helper methods
   private async hashSingle(input: string): Promise<string> {
     const crypto = require('crypto');
