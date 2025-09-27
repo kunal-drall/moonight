@@ -10,7 +10,8 @@
     "lint": "eslint src/**/*.ts",
     "deploy": "node dist/deploy.js",
     "examples": "node dist/examples.js",
-    "demo:bidding": "tsc && node dist/demo-anonymous-bidding.js"
+    "demo:bidding": "tsc && node dist/demo-anonymous-bidding.js",
+    "demo:privacy-bridge": "tsc && node dist/demo-privacy-bridge.js"
   },
   "keywords": [
     "midnight",

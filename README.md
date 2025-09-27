@@ -17,6 +17,13 @@ A privacy-first lending circles smart contract for the Midnight blockchain, feat
 - **Trust Score Calculation**: Multi-factor scoring with ZK proofs
 - **Insurance Pool Management**: Automated stake management and penalty distribution
 
+### 🌉 Cross-Chain Privacy Bridge
+- **Anonymous Asset Transfers**: Unlinkable transfers between Midnight, Ethereum, Polygon, Arbitrum
+- **Private Payment Routing**: Multi-hop routing through intermediary chains for enhanced privacy
+- **Confidential Balance Proofs**: Prove sufficient balance without revealing exact amounts  
+- **Anonymous Transaction Mixing**: Break linkability through mixing pools with 10+ participants
+- **ZK Bridging Protocols**: Zero-knowledge proofs for all cross-chain operations
+
 ## 🏗️ Architecture
 
 ### Smart Contract Components
@@ -29,6 +36,12 @@ The core contract managing all lending circle operations with privacy preservati
 - **`PrivacyUtils`**: Privacy-preserving cryptographic operations
 - **`TrustScoreCalculator`**: Anonymous trust scoring system
 - **`CrossChainManager`**: Cross-chain identity and reputation management
+
+#### Cross-Chain Privacy Bridge:
+- **`PrivacyBridge`**: Main bridge contract for anonymous cross-chain transfers
+- **`AnonymityPoolManager`**: Manages mixing pools for different denominations
+- **`TransactionMixer`**: Batches and shuffles transactions for anonymity
+- **`CrossChainRouter`**: Finds optimal privacy-preserving routes between chains
 
 ### Privacy Implementation
 - Uses ZK-SNARKs for membership verification
@@ -59,6 +72,16 @@ npm run deploy
 ```
 
 ### Run Tests
+
+```bash
+npm test
+```
+
+### Demo Cross-Chain Privacy Bridge
+
+```bash
+npm run demo:privacy-bridge
+```
 
 ```bash
 npm test
