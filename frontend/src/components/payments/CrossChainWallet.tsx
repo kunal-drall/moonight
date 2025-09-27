@@ -2,13 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  WalletIcon,
   EyeSlashIcon,
   ShieldCheckIcon,
   ArrowsRightLeftIcon,
   PlusIcon,
-  LinkIcon,
-  CreditCardIcon
+  LinkIcon
 } from '@heroicons/react/24/outline';
 
 interface ChainBalance {
@@ -35,7 +33,6 @@ export default function CrossChainWallet() {
   const [transactions, setTransactions] = useState<PrivateTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPrivateBalances, setShowPrivateBalances] = useState(false);
-  const [selectedChain, setSelectedChain] = useState<string | null>(null);
 
   useEffect(() => {
     // Simulate loading wallet data
@@ -194,7 +191,7 @@ export default function CrossChainWallet() {
               key={index} 
               balance={balance} 
               showBalance={showPrivateBalances}
-              onSelect={() => setSelectedChain(balance.chain)}
+              onSelect={() => {}}
             />
           ))
         )}

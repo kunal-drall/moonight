@@ -23,7 +23,6 @@ interface ProofStep {
 
 export default function ZKProofGenerator({ type, isVisible, onComplete }: ZKProofGeneratorProps) {
   const [steps, setSteps] = useState<ProofStep[]>([]);
-  const [currentStep, setCurrentStep] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
 
   useEffect(() => {
@@ -32,7 +31,6 @@ export default function ZKProofGenerator({ type, isVisible, onComplete }: ZKProo
     // Initialize steps based on proof type
     const proofSteps = getStepsForType(type);
     setSteps(proofSteps);
-    setCurrentStep(0);
     setIsComplete(false);
 
     // Start proof generation simulation
@@ -85,7 +83,6 @@ export default function ZKProofGenerator({ type, isVisible, onComplete }: ZKProo
         processing: idx === i,
         completed: idx < i
       })));
-      setCurrentStep(i);
 
       // Simulate processing time (varies by step)
       const processingTime = i === 2 ? 2000 : 800; // Proof computation takes longer

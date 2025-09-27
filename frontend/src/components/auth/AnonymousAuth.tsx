@@ -14,12 +14,10 @@ interface AuthProps {
 }
 
 export default function AnonymousAuth({ onAuthenticated }: AuthProps) {
-  const [isGeneratingIdentity, setIsGeneratingIdentity] = useState(false);
   const [step, setStep] = useState<'welcome' | 'generating' | 'complete'>('welcome');
   const [identityCommitment, setIdentityCommitment] = useState<string>('');
 
   const handleGenerateIdentity = async () => {
-    setIsGeneratingIdentity(true);
     setStep('generating');
 
     // Simulate ZK identity generation
@@ -40,7 +38,6 @@ export default function AnonymousAuth({ onAuthenticated }: AuthProps) {
     setIdentityCommitment(commitment);
     
     setStep('complete');
-    setIsGeneratingIdentity(false);
     
     setTimeout(() => {
       onAuthenticated(commitment);
