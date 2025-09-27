@@ -168,13 +168,22 @@ export class PrivacyUtils {
     const hash = crypto.createHash('sha256');
     
     const commitment = {
-      data: typeof data === 'string' ? data : JSON.stringify(data),
+      data: typeof data === 'string' ? data : this.serializeWithBigInt(data),
       randomness: randomness || crypto.randomBytes(32).toString('hex'),
       scheme: this.params.commitmentScheme
     };
 
     hash.update(JSON.stringify(commitment));
     return hash.digest('hex');
+  }
+
+  /**
+   * Serialize data with BigInt support
+   */
+  private serializeWithBigInt(obj: any): string {
+    return JSON.stringify(obj, (key, value) =>
+      typeof value === 'bigint' ? value.toString() : value
+    );
   }
 
   /**

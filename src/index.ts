@@ -11,6 +11,12 @@ export { CrossChainManager } from './utils/cross-chain';
 export { BiddingCircuit } from './circuits/BiddingCircuit';
 export { BidAuctionManager } from './auctions/BidAuctionManager';
 
+// Cross-Chain Privacy Bridge exports
+export { PrivacyBridge } from './bridge/PrivacyBridge';
+export { AnonymityPoolManager } from './bridge/AnonymityPoolManager';
+export { TransactionMixer } from './bridge/TransactionMixer';
+export { CrossChainRouter } from './bridge/CrossChainRouter';
+
 export * from './types';
 
 // Default privacy parameters for Midnight blockchain
