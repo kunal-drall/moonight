@@ -142,3 +142,80 @@ export interface CreateProposalParams {
   readonly votingPeriod: number;
   readonly requiredQuorum: number;
 }
+
+// Cross-Chain Privacy Bridge Types
+export interface CrossChainTransfer {
+  readonly transferId: string;
+  readonly sourceChain: string;
+  readonly targetChain: string;
+  readonly amount: bigint;
+  readonly recipientCommitment: string; // ZK commitment to recipient identity
+  readonly nullifierHash: string; // Prevents double-spending
+  readonly zkProof: string; // Privacy-preserving transfer proof
+  readonly timestamp: number;
+  readonly status: 'PENDING' | 'CONFIRMED' | 'EXECUTED' | 'FAILED';
+}
+
+export interface PrivacyBridgeState {
+  readonly bridgeId: string;
+  readonly supportedChains: string[];
+  readonly totalLocked: Map<string, bigint>; // chain -> locked amount
+  readonly anonymitySet: Set<string>; // Set of nullifiers for mixing
+  readonly transferQueue: CrossChainTransfer[];
+  readonly zkVerificationKeys: Map<string, string>; // chain -> verification key
+}
+
+export interface AnonymousTransferParams {
+  readonly sourceChain: string;
+  readonly targetChain: string;
+  readonly amount: bigint;
+  readonly recipientCommitment: string;
+  readonly senderNullifier: string;
+  readonly mixingDelay: number; // Seconds to wait for anonymity
+  readonly zkProof: string;
+}
+
+export interface ConfidentialBalance {
+  readonly balanceCommitment: string; // Pedersen commitment to balance
+  readonly chainId: string;
+  readonly nullifierSet: Set<string>; // Used nullifiers
+  readonly zkProof: string; // Proof of balance validity
+}
+
+export interface CrossChainPaymentRoute {
+  readonly routeId: string;
+  readonly sourceChain: string;
+  readonly intermediateChains: string[];
+  readonly targetChain: string;
+  readonly totalHops: number;
+  readonly estimatedDelay: number;
+  readonly privacyScore: number; // 0-100, higher is more private
+}
+
+export interface ZKBridgeProof {
+  readonly proofType: 'TRANSFER' | 'BALANCE' | 'MEMBERSHIP' | 'NULLIFIER';
+  readonly chainId: string;
+  readonly proof: string;
+  readonly publicSignals: string[];
+  readonly verificationKey: string;
+}
+
+export interface AnonymityPool {
+  readonly poolId: string;
+  readonly chainId: string;
+  readonly denomination: bigint; // Fixed denomination for mixing
+  readonly commitments: Set<string>; // All commitments in the pool
+  readonly nullifiers: Set<string>; // Spent nullifiers
+  readonly merkleRoot: string; // Root of commitment tree
+  readonly poolSize: number;
+}
+
+export interface PrivateTransactionMix {
+  readonly mixId: string;
+  readonly inputCommitments: string[];
+  readonly outputCommitments: string[];
+  readonly nullifiers: string[];
+  readonly zkProof: string;
+  readonly anonymitySetSize: number;
+  readonly mixingFee: bigint;
+}
