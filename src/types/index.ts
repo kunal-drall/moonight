@@ -49,11 +49,16 @@ export interface TrustScoreUpdate {
 
 export interface GovernanceProposal {
   readonly proposalId: string;
-  readonly proposalType: 'INTEREST_RATE' | 'CIRCLE_PARAMS' | 'PENALTY_RULES';
+  readonly circleId?: string; // Optional: for circle-specific proposals
+  readonly proposalType: 'INTEREST_RATE' | 'CIRCLE_PARAMS' | 'PENALTY_RULES' | 'QUORUM_THRESHOLD' | 'VOTING_PERIOD';
   readonly proposalData: string; // Encrypted proposal details
   readonly votingDeadline: number;
   readonly requiredQuorum: number;
+  readonly minimumTrustScore?: number; // Minimum trust score to vote
   readonly isActive: boolean;
+  readonly status: 'ACTIVE' | 'PASSED' | 'FAILED' | 'EXECUTED';
+  readonly createdAt: number;
+  readonly executionDeadline?: number; // Deadline for executing passed proposals
 }
 
 export interface AnonymousVote {
@@ -61,6 +66,9 @@ export interface AnonymousVote {
   readonly proposalId: string;
   readonly zkNullifier: string; // Prevents double voting
   readonly zkProof: string; // Proof of valid membership without revealing identity
+  readonly trustWeight: number; // Trust-weighted voting power (0-1000)
+  readonly voteChoice: boolean; // True for yes, false for no (encrypted in voteHash)
+  readonly timestamp: number;
 }
 
 export interface InsurancePool {
@@ -94,6 +102,9 @@ export interface ContractState {
   readonly trustScores: Map<string, number>;
   readonly governanceProposals: Map<string, GovernanceProposal>;
   readonly votes: Map<string, AnonymousVote[]>;
+  readonly voteTallies: Map<string, VoteTallyResult>; // Proposal results
+  readonly proposalExecutions: Map<string, ProposalExecution>; // Execution records
+  readonly circleGovernanceParams: Map<string, CircleGovernanceParams>; // Circle-specific governance settings
   insurancePool: InsurancePool; // Made mutable for updates
   readonly crossChainIdentities: Map<string, CrossChainIdentity>;
   readonly privacyParams: PrivacyParams;
@@ -141,6 +152,45 @@ export interface CreateProposalParams {
   readonly proposalData: string;
   readonly votingPeriod: number;
   readonly requiredQuorum: number;
+  readonly circleId?: string; // For circle-specific proposals
+  readonly minimumTrustScore?: number; // Minimum trust score to vote
+  readonly executionPeriod?: number; // Time to execute after passing
+}
+
+// New governance interfaces for enhanced functionality
+export interface VoteTallyResult {
+  readonly proposalId: string;
+  readonly totalVotes: number;
+  readonly yesVotes: number;
+  readonly noVotes: number;
+  readonly totalTrustWeight: number;
+  readonly yesTrustWeight: number;
+  readonly noTrustWeight: number;
+  readonly quorumMet: boolean;
+  readonly passed: boolean;
+  readonly privacyPreserved: boolean; // Indicates if individual votes remain private
+}
+
+export interface ProposalExecution {
+  readonly proposalId: string;
+  readonly executionProof: string; // ZK proof of valid execution
+  readonly executedAt: number;
+  readonly executionResult: string; // Encrypted result data
+}
+
+export interface VoteCommitment {
+  readonly commitment: string; // Pedersen commitment to vote choice
+  readonly randomness: string; // Random value for commitment
+  readonly voterSecret: string; // Voter's secret for ZK proofs
+}
+
+export interface CircleGovernanceParams {
+  readonly circleId: string;
+  readonly votingThreshold: number; // Percentage required to pass (0-100)
+  readonly quorumPercentage: number; // Minimum participation (0-100)
+  readonly votingPeriodHours: number;
+  readonly executionDelayHours: number;
+  readonly allowedProposalTypes: GovernanceProposal['proposalType'][];
 }
 
 // Cross-Chain Privacy Bridge Types

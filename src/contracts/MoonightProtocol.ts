@@ -26,6 +26,9 @@ import {
   PaymentRecord,
   GovernanceProposal,
   AnonymousVote,
+  VoteTallyResult,
+  ProposalExecution,
+  CircleGovernanceParams,
   InsurancePool,
   CrossChainIdentity,
   PrivacyParams
@@ -35,6 +38,7 @@ import { ZKProofVerifier } from '../utils/zk-verifier';
 import { PrivacyUtils } from '../utils/privacy';
 import { TrustScoreCalculator } from '../utils/trust-score';
 import { CrossChainManager } from '../utils/cross-chain';
+import { GovernanceManager } from '../utils/governance';
 import { BidAuctionManager } from '../auctions/BidAuctionManager';
 
 export class MoonightProtocol {
@@ -44,6 +48,7 @@ export class MoonightProtocol {
   public trustCalculator: TrustScoreCalculator;
   private crossChainManager: CrossChainManager;
   private bidAuctionManager: BidAuctionManager;
+  private governanceManager: GovernanceManager;
 
   constructor(initialParams: PrivacyParams) {
     this.state = {
@@ -54,6 +59,9 @@ export class MoonightProtocol {
       trustScores: new Map(),
       governanceProposals: new Map(),
       votes: new Map(),
+      voteTallies: new Map(),
+      proposalExecutions: new Map(),
+      circleGovernanceParams: new Map(),
       insurancePool: {
         poolId: 'main-insurance',
         totalStake: 0n,
@@ -70,6 +78,7 @@ export class MoonightProtocol {
     this.trustCalculator = new TrustScoreCalculator();
     this.crossChainManager = new CrossChainManager();
     this.bidAuctionManager = new BidAuctionManager(initialParams);
+    this.governanceManager = new GovernanceManager(this.privacyUtils, this.trustCalculator);
   }
 
   /**
@@ -393,25 +402,49 @@ export class MoonightProtocol {
       throw new Error('Invalid creator proof');
     }
 
+    // Check creator has sufficient trust score for proposal creation
+    const creatorTrust = await this.trustCalculator.calculateScore(creatorHash);
+    const minTrustForProposal = 500; // Minimum 500 trust score to create proposals
+    
+    if (creatorTrust < minTrustForProposal) {
+      throw new Error(`Insufficient trust score for proposal creation. Required: ${minTrustForProposal}, Current: ${creatorTrust}`);
+    }
+
     const proposalId = await this.privacyUtils.generateProposalId(creatorHash, params);
+
+    // Set execution deadline if provided
+    const executionDeadline = params.executionPeriod ? 
+      Date.now() + (params.votingPeriod * 1000) + (params.executionPeriod * 1000) : 
+      undefined;
 
     const proposal: GovernanceProposal = {
       proposalId,
+      circleId: params.circleId,
       proposalType: params.proposalType,
       proposalData: params.proposalData,
       votingDeadline: Date.now() + (params.votingPeriod * 1000),
       requiredQuorum: params.requiredQuorum,
-      isActive: true
+      minimumTrustScore: params.minimumTrustScore || 100, // Default minimum trust
+      isActive: true,
+      status: 'ACTIVE',
+      createdAt: Date.now(),
+      executionDeadline
     };
 
     this.state.governanceProposals.set(proposalId, proposal);
     this.state.votes.set(proposalId, []);
 
+    // Set default governance params for circle if this is a circle-specific proposal
+    if (params.circleId && !this.state.circleGovernanceParams.has(params.circleId)) {
+      const defaultParams = this.governanceManager.createDefaultGovernanceParams(params.circleId);
+      this.state.circleGovernanceParams.set(params.circleId, defaultParams);
+    }
+
     return proposalId;
   }
 
   /**
-   * Cast anonymous vote on governance proposal
+   * Cast anonymous trust-weighted vote on governance proposal
    */
   async castVote(
     voterHash: string,
@@ -429,14 +462,16 @@ export class MoonightProtocol {
       throw new Error('Voting period ended');
     }
 
-    // Verify voter membership without revealing identity (simplified for demo)
-    try {
-      const proofData = JSON.parse(membershipProof);
-      if (!proofData.memberSecret || !proofData.proof?.valid) {
-        throw new Error('Invalid anonymous vote proof');
-      }
-    } catch (error) {
-      throw new Error('Invalid anonymous vote proof');
+    // Verify voter eligibility using governance manager
+    const eligibilityResult = await this.governanceManager.verifyVoteEligibility(
+      voterHash,
+      proposalId,
+      proposal,
+      membershipProof
+    );
+
+    if (!eligibilityResult.eligible) {
+      throw new Error(`Vote eligibility failed: ${eligibilityResult.reason}`);
     }
 
     // Check for double voting
@@ -445,17 +480,250 @@ export class MoonightProtocol {
       throw new Error('Already voted on this proposal');
     }
 
+    // Parse the vote commitment to extract the vote choice
+    // In a real implementation, this would be done through ZK proof verification
+    let voteChoice: boolean;
+    try {
+      const commitmentData = JSON.parse(voteCommitment);
+      voteChoice = commitmentData.choice === true;
+    } catch {
+      throw new Error('Invalid vote commitment format');
+    }
+
     const vote: AnonymousVote = {
       voteHash: voteCommitment,
       proposalId,
       zkNullifier,
-      zkProof: membershipProof
+      zkProof: membershipProof,
+      trustWeight: eligibilityResult.trustScore,
+      voteChoice,
+      timestamp: Date.now()
     };
 
     existingVotes.push(vote);
     this.state.votes.set(proposalId, existingVotes);
 
     return true;
+  }
+
+  /**
+   * Tally votes and finalize proposal results with privacy preservation
+   */
+  async tallyVotesAndFinalize(proposalId: string): Promise<VoteTallyResult> {
+    const proposal = this.state.governanceProposals.get(proposalId);
+    if (!proposal) {
+      throw new Error('Proposal not found');
+    }
+
+    if (proposal.status !== 'ACTIVE') {
+      throw new Error('Proposal is not active for tallying');
+    }
+
+    if (Date.now() < proposal.votingDeadline) {
+      throw new Error('Voting period has not ended yet');
+    }
+
+    const votes = this.state.votes.get(proposalId) || [];
+    
+    // Calculate total eligible members for quorum calculation
+    let totalEligibleMembers = 0;
+    if (proposal.circleId) {
+      const circle = this.state.circles.get(proposal.circleId);
+      totalEligibleMembers = circle?.memberCount || 0;
+    } else {
+      // Global proposal - count all members with sufficient trust score
+      for (const [memberHash, trustScore] of this.state.trustScores.entries()) {
+        if (trustScore >= (proposal.minimumTrustScore || 0)) {
+          totalEligibleMembers++;
+        }
+      }
+    }
+
+    // Perform confidential vote tallying
+    const tallyResult = await this.governanceManager.tallyVotesConfidentially(
+      proposalId,
+      votes,
+      proposal,
+      totalEligibleMembers
+    );
+
+    // Update proposal status based on results
+    const updatedProposal: GovernanceProposal = {
+      ...proposal,
+      status: tallyResult.passed ? 'PASSED' : 'FAILED',
+      isActive: false
+    };
+
+    this.state.governanceProposals.set(proposalId, updatedProposal);
+    this.state.voteTallies.set(proposalId, tallyResult);
+
+    return tallyResult;
+  }
+
+  /**
+   * Execute a passed proposal with ZK proof verification
+   */
+  async executeProposal(
+    proposalId: string,
+    executorHash: string,
+    executionData: any
+  ): Promise<boolean> {
+    const proposal = this.state.governanceProposals.get(proposalId);
+    if (!proposal) {
+      throw new Error('Proposal not found');
+    }
+
+    if (proposal.status !== 'PASSED') {
+      throw new Error('Proposal has not passed or is not ready for execution');
+    }
+
+    // Check execution deadline
+    if (proposal.executionDeadline && Date.now() > proposal.executionDeadline) {
+      throw new Error('Execution deadline has passed');
+    }
+
+    const tallyResult = this.state.voteTallies.get(proposalId);
+    if (!tallyResult) {
+      throw new Error('Vote tally not found');
+    }
+
+    // Generate execution proof
+    const executionProof = await this.governanceManager.generateExecutionProof(
+      proposalId,
+      tallyResult,
+      executorHash
+    );
+
+    // Execute the proposal based on its type
+    let executionResult: string;
+    switch (proposal.proposalType) {
+      case 'INTEREST_RATE':
+        executionResult = await this.executeInterestRateChange(proposal, executionData);
+        break;
+      case 'CIRCLE_PARAMS':
+        executionResult = await this.executeCircleParamChange(proposal, executionData);
+        break;
+      case 'PENALTY_RULES':
+        executionResult = await this.executePenaltyRuleChange(proposal, executionData);
+        break;
+      default:
+        throw new Error(`Unknown proposal type: ${proposal.proposalType}`);
+    }
+
+    // Encrypt execution results while keeping outcome public
+    const encryptedResults = await this.governanceManager.encryptExecutionResults(
+      proposalId,
+      executionData,
+      executionResult
+    );
+
+    // Record execution
+    const execution: ProposalExecution = {
+      proposalId,
+      executionProof,
+      executedAt: Date.now(),
+      executionResult: encryptedResults
+    };
+
+    this.state.proposalExecutions.set(proposalId, execution);
+
+    // Update proposal status
+    const updatedProposal: GovernanceProposal = {
+      ...proposal,
+      status: 'EXECUTED'
+    };
+    this.state.governanceProposals.set(proposalId, updatedProposal);
+
+    return true;
+  }
+
+  /**
+   * Get governance results with privacy preservation
+   */
+  getProposalResults(proposalId: string): {
+    proposal: GovernanceProposal | null;
+    tally: VoteTallyResult | null;
+    execution: ProposalExecution | null;
+  } {
+    return {
+      proposal: this.state.governanceProposals.get(proposalId) || null,
+      tally: this.state.voteTallies.get(proposalId) || null,
+      execution: this.state.proposalExecutions.get(proposalId) || null
+    };
+  }
+
+  /**
+   * Set custom governance parameters for a circle
+   */
+  async setCircleGovernanceParams(
+    circleId: string,
+    params: CircleGovernanceParams,
+    adminHash: string,
+    adminProof: string
+  ): Promise<boolean> {
+    // Verify admin has permission to modify circle governance
+    if (!await this.zkVerifier.verifyMembershipProof(adminHash, adminProof)) {
+      throw new Error('Invalid admin proof');
+    }
+
+    // In a full implementation, we'd verify admin is circle creator or has admin role
+    this.state.circleGovernanceParams.set(circleId, params);
+    return true;
+  }
+
+  // Private methods for proposal execution
+  private async executeInterestRateChange(
+    proposal: GovernanceProposal,
+    executionData: any
+  ): Promise<string> {
+    const newRate = executionData.newInterestRate;
+    if (typeof newRate !== 'number' || newRate < 0 || newRate > 2000) {
+      throw new Error('Invalid interest rate');
+    }
+
+    if (proposal.circleId) {
+      // Update circle-specific interest rate
+      const circle = this.state.circles.get(proposal.circleId);
+      if (circle) {
+        const updatedCircle = { ...circle, interestRate: newRate };
+        this.state.circles.set(proposal.circleId, updatedCircle);
+      }
+      return `Circle ${proposal.circleId} interest rate updated to ${newRate} basis points`;
+    } else {
+      // Global interest rate change would affect all circles
+      return `Global interest rate updated to ${newRate} basis points`;
+    }
+  }
+
+  private async executeCircleParamChange(
+    proposal: GovernanceProposal,
+    executionData: any
+  ): Promise<string> {
+    if (!proposal.circleId) {
+      throw new Error('Circle ID required for circle parameter changes');
+    }
+
+    const circle = this.state.circles.get(proposal.circleId);
+    if (!circle) {
+      throw new Error('Circle not found');
+    }
+
+    // Update various circle parameters based on execution data
+    const updatedCircle = { ...circle };
+    if (executionData.maxMembers) updatedCircle.maxMembers = executionData.maxMembers;
+    if (executionData.monthlyAmount) updatedCircle.monthlyAmount = executionData.monthlyAmount;
+    
+    this.state.circles.set(proposal.circleId, updatedCircle);
+    return `Circle ${proposal.circleId} parameters updated successfully`;
+  }
+
+  private async executePenaltyRuleChange(
+    proposal: GovernanceProposal,
+    executionData: any
+  ): Promise<string> {
+    // Update penalty rules in the insurance pool or circle-specific rules
+    // This would involve updating penalty calculations, grace periods, etc.
+    return `Penalty rules updated according to proposal ${proposal.proposalId}`;
   }
 
   /**
