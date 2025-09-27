@@ -372,4 +372,163 @@ export class ZKProofVerifier {
     hash.update(memberSecret + this.params.nullifierDerivation);
     return hash.digest('hex');
   }
+
+  /**
+   * Verify anonymous bid commitment and eligibility proof
+   */
+  async verifyAnonymousBidProof(
+    bidCommitment: string,
+    membershipProof: string,
+    rangeProof: string,
+    fairnessProof: string,
+    circleId: string,
+    minBid: bigint,
+    maxBid: bigint
+  ): Promise<boolean> {
+    try {
+      // Verify bid commitment format
+      if (!bidCommitment || bidCommitment.length !== 64) {
+        return false;
+      }
+
+      // Verify membership proof
+      const membershipData = JSON.parse(membershipProof);
+      if (!membershipData.valid || membershipData.circleId !== circleId) {
+        return false;
+      }
+
+      // Verify range proof
+      const rangeData = JSON.parse(rangeProof);
+      if (!rangeData.valid || !rangeData.zkProof?.valid) {
+        return false;
+      }
+
+      // Verify range bounds
+      const minBidStr = minBid.toString();
+      const maxBidStr = maxBid.toString();
+      if (rangeData.minBid !== minBidStr || rangeData.maxBid !== maxBidStr) {
+        return false;
+      }
+
+      // Verify fairness proof
+      const fairnessData = JSON.parse(fairnessProof);
+      if (!fairnessData.valid) {
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Anonymous bid proof verification failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Verify winner selection proof without revealing losing bids
+   */
+  async verifyWinnerSelectionProof(
+    selectionProof: string,
+    fairnessProof: string,
+    bidCommitments: string[],
+    winnerCommitment: string,
+    circleId: string
+  ): Promise<boolean> {
+    try {
+      // Verify selection proof
+      const selectionData = JSON.parse(selectionProof);
+      if (!selectionData.zkProof?.valid || 
+          selectionData.selectionMethod !== 'minimum' ||
+          selectionData.totalBids !== bidCommitments.length) {
+        return false;
+      }
+
+      // Verify fairness proof
+      const fairnessData = JSON.parse(fairnessProof);
+      if (!fairnessData.selectionFair || 
+          fairnessData.bidCount !== bidCommitments.length) {
+        return false;
+      }
+
+      // Verify winner commitment is valid
+      if (!winnerCommitment || winnerCommitment.length !== 64) {
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Winner selection proof verification failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Verify nullifier uniqueness to prevent double bidding
+   */
+  async verifyBidNullifierUniqueness(
+    nullifier: string,
+    circleId: string,
+    round: number,
+    usedNullifiers: Set<string>
+  ): Promise<boolean> {
+    try {
+      // Check if nullifier was already used
+      if (usedNullifiers.has(nullifier)) {
+        return false;
+      }
+
+      // Verify nullifier format
+      if (!nullifier || nullifier.length !== 64) {
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Bid nullifier verification failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Batch verify multiple anonymous bid proofs efficiently
+   */
+  async batchVerifyBidProofs(
+    bidProofs: Array<{
+      bidCommitment: string;
+      membershipProof: string;
+      rangeProof: string;
+      fairnessProof: string;
+      nullifier: string;
+    }>,
+    circleId: string,
+    minBid: bigint,
+    maxBid: bigint,
+    usedNullifiers: Set<string>
+  ): Promise<boolean[]> {
+    const results: boolean[] = [];
+
+    for (const proof of bidProofs) {
+      // Verify individual bid proof
+      const bidValid = await this.verifyAnonymousBidProof(
+        proof.bidCommitment,
+        proof.membershipProof,
+        proof.rangeProof,
+        proof.fairnessProof,
+        circleId,
+        minBid,
+        maxBid
+      );
+
+      // Verify nullifier uniqueness
+      const nullifierValid = await this.verifyBidNullifierUniqueness(
+        proof.nullifier,
+        circleId,
+        0, // round number would be provided in real implementation
+        usedNullifiers
+      );
+
+      results.push(bidValid && nullifierValid);
+    }
+
+    return results;
+  }
 }

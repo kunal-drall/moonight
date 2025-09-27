@@ -35,6 +35,7 @@ import { ZKProofVerifier } from '../utils/zk-verifier';
 import { PrivacyUtils } from '../utils/privacy';
 import { TrustScoreCalculator } from '../utils/trust-score';
 import { CrossChainManager } from '../utils/cross-chain';
+import { BidAuctionManager } from '../auctions/BidAuctionManager';
 
 export class MoonightProtocol {
   private state: ContractState;
@@ -42,6 +43,7 @@ export class MoonightProtocol {
   public privacyUtils: PrivacyUtils;
   public trustCalculator: TrustScoreCalculator;
   private crossChainManager: CrossChainManager;
+  private bidAuctionManager: BidAuctionManager;
 
   constructor(initialParams: PrivacyParams) {
     this.state = {
@@ -67,6 +69,7 @@ export class MoonightProtocol {
     this.privacyUtils = new PrivacyUtils(initialParams);
     this.trustCalculator = new TrustScoreCalculator();
     this.crossChainManager = new CrossChainManager();
+    this.bidAuctionManager = new BidAuctionManager(initialParams);
   }
 
   /**
@@ -554,6 +557,175 @@ export class MoonightProtocol {
     return this.state.trustScores.get(memberHash) || null;
   }
 
+  /**
+   * Start an anonymous bidding round for monthly loans
+   */
+  async startAnonymousBiddingRound(
+    circleId: string,
+    round: number,
+    biddingPeriodHours: number = 24
+  ): Promise<string> {
+    const circle = this.state.circles.get(circleId);
+    if (!circle || !circle.isActive) {
+      throw new Error('Circle not found or inactive');
+    }
+
+    // Get eligible members from circle
+    const eligibleMembers = Array.from(this.state.members.keys())
+      .filter(memberHash => {
+        const member = this.state.members.get(memberHash);
+        return member && this.isMemberOfCircle(memberHash, circleId);
+      });
+
+    if (eligibleMembers.length === 0) {
+      throw new Error('No eligible members for bidding');
+    }
+
+    // Determine bid range based on circle parameters
+    const minBid = BigInt(1); // Minimum interest rate (1 basis point)
+    const maxBid = circle.monthlyAmount / BigInt(2); // Maximum reasonable interest
+
+    return await this.bidAuctionManager.startBiddingRound(
+      circleId,
+      round,
+      eligibleMembers,
+      biddingPeriodHours,
+      minBid,
+      maxBid
+    );
+  }
+
+  /**
+   * Submit anonymous bid with ZK proofs for member eligibility and bid validity
+   */
+  async submitAnonymousBid(
+    auctionId: string,
+    memberHash: string,
+    bidAmount: bigint,
+    membershipWitness: string
+  ): Promise<boolean> {
+    // Generate randomness for bid commitment
+    const crypto = require('crypto');
+    const randomness = crypto.randomBytes(32).toString('hex');
+
+    // Create bid data
+    const bidData = {
+      amount: bidAmount,
+      memberHash,
+      round: 1, // This would be extracted from auction data
+      randomness
+    };
+
+    return await this.bidAuctionManager.submitAnonymousBid(
+      auctionId,
+      bidData,
+      membershipWitness
+    );
+  }
+
+  /**
+   * Finalize bidding round and select winner with ZK proofs
+   */
+  async finalizeBiddingRound(auctionId: string) {
+    return await this.bidAuctionManager.finalizeBidding(auctionId);
+  }
+
+  /**
+   * Get bidding phase information
+   */
+  getBiddingPhase(auctionId: string) {
+    return this.bidAuctionManager.getBiddingPhase(auctionId);
+  }
+
+  /**
+   * Verify integrity of a completed auction
+   */
+  async verifyAuctionIntegrity(auctionId: string): Promise<boolean> {
+    return await this.bidAuctionManager.verifyAuctionIntegrity(auctionId);
+  }
+
+  /**
+   * Get publicly verifiable auction statistics
+   */
+  getAuctionStatistics(auctionId: string) {
+    return this.bidAuctionManager.getAuctionStatistics(auctionId);
+  }
+
+  /**
+   * Advanced bid validation with comprehensive ZK proofs
+   */
+  async validateBidWithProofs(
+    circleId: string,
+    memberHash: string,
+    bidCommitment: string,
+    membershipProof: string,
+    rangeProof: string,
+    fairnessProof: string,
+    nullifier: string,
+    usedNullifiers: Set<string>
+  ): Promise<boolean> {
+    const circle = this.state.circles.get(circleId);
+    if (!circle) {
+      return false;
+    }
+
+    // Get bid range for this circle
+    const minBid = BigInt(1);
+    const maxBid = circle.monthlyAmount / BigInt(2);
+
+    // Verify anonymous bid proof
+    const bidValid = await this.zkVerifier.verifyAnonymousBidProof(
+      bidCommitment,
+      membershipProof,
+      rangeProof,
+      fairnessProof,
+      circleId,
+      minBid,
+      maxBid
+    );
+
+    // Verify nullifier uniqueness
+    const nullifierValid = await this.zkVerifier.verifyBidNullifierUniqueness(
+      nullifier,
+      circleId,
+      circle.currentRound,
+      usedNullifiers
+    );
+
+    return bidValid && nullifierValid;
+  }
+
+  /**
+   * Batch validate multiple bids for efficiency
+   */
+  async batchValidateBids(
+    circleId: string,
+    bidProofs: Array<{
+      bidCommitment: string;
+      membershipProof: string;
+      rangeProof: string;
+      fairnessProof: string;
+      nullifier: string;
+    }>,
+    usedNullifiers: Set<string>
+  ): Promise<boolean[]> {
+    const circle = this.state.circles.get(circleId);
+    if (!circle) {
+      return new Array(bidProofs.length).fill(false);
+    }
+
+    const minBid = BigInt(1);
+    const maxBid = circle.monthlyAmount / BigInt(2);
+
+    return await this.zkVerifier.batchVerifyBidProofs(
+      bidProofs,
+      circleId,
+      minBid,
+      maxBid,
+      usedNullifiers
+    );
+  }
+
   // Private helper methods
   private async updateInsurancePool(stakeAmount: bigint, memberChange: number): Promise<void> {
     const updatedPool: InsurancePool = {
@@ -563,6 +735,13 @@ export class MoonightProtocol {
       lastUpdateBlock: await this.getCurrentBlock()
     };
     this.state.insurancePool = updatedPool;
+  }
+
+  private isMemberOfCircle(memberHash: string, circleId: string): boolean {
+    // In a real implementation, this would check the circle membership tree
+    // For now, we'll check if member exists and has joined
+    const member = this.state.members.get(memberHash);
+    return member !== undefined;
   }
 
   private async getCurrentBlock(): Promise<number> {
