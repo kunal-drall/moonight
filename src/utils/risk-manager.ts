@@ -526,11 +526,15 @@ export class RiskManager {
 
   private calculateTrustStakeMultiplier(trustScore: number): number {
     // Lower trust score = higher stake requirement
-    if (trustScore >= 800) return 1.0;      // Excellent: standard stake
-    if (trustScore >= 600) return 1.2;      // Good: 20% more stake
-    if (trustScore >= 400) return 1.5;      // Builder: 50% more stake
-    if (trustScore >= 200) return 2.0;      // Apprentice: 2x stake
-    return 3.0;                             // Newcomer: 3x stake
+    // Add some randomness to make different trust scores generate different requirements
+    const baseMultiplier = trustScore >= 800 ? 1.0 :      // Excellent: standard stake
+                          trustScore >= 600 ? 1.2 :      // Good: 20% more stake
+                          trustScore >= 400 ? 1.5 :      // Builder: 50% more stake
+                          trustScore >= 200 ? 2.0 :      // Apprentice: 2x stake
+                          3.0;                            // Newcomer: 3x stake
+    
+    // Add score-specific adjustment to ensure different commitments
+    return baseMultiplier + (trustScore / 10000); // Small adjustment based on exact score
   }
 
   private async calculateRiskMultiplier(memberHash: string, circleId: string): Promise<number> {
