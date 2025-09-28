@@ -402,6 +402,89 @@ export interface CrossChainSettlement {
   readonly completionTime: number;
 }
 
+// Privacy-Preserving Risk Management Types
+export interface RiskAssessment {
+  readonly memberHash: string;
+  readonly riskScore: number; // 0-100, higher = more risky
+  readonly stakeAdequacy: boolean;
+  readonly defaultProbability: number; // 0-1
+  readonly liquidationRisk: number; // 0-1
+  readonly zkProof: string; // ZK proof of assessment validity
+  readonly assessmentTimestamp: number;
+}
+
+export interface DefaultDetectionResult {
+  readonly detectionId: string;
+  readonly circleId: string;
+  readonly round: number;
+  readonly anonymousFlags: AnonymousDefaultFlag[];
+  readonly confidentialSeverity: number; // 0-10 scale
+  readonly requiresIntervention: boolean;
+  readonly zkProof: string; // Proof of valid detection without revealing member
+}
+
+export interface AnonymousDefaultFlag {
+  readonly flagId: string;
+  readonly nullifierHash: string; // Prevents duplicate flagging
+  readonly severityCommitment: string; // Pedersen commitment to severity
+  readonly evidenceHash: string; // Hash of encrypted evidence
+  readonly flagTimestamp: number;
+  readonly zkProof: string; // Proof flag is valid without revealing flagger
+}
+
+export interface LiquidationOrder {
+  readonly orderId: string;
+  readonly targetCommitment: string; // ZK commitment to target member
+  readonly liquidationAmount: bigint;
+  readonly confidentialReason: string; // Encrypted liquidation reason
+  readonly executionDeadline: number;
+  readonly recoveredAssets: EncryptedAssetRecord[];
+  readonly zkProof: string; // Proof liquidation is justified
+}
+
+export interface EncryptedAssetRecord {
+  readonly assetId: string;
+  readonly encryptedValue: string; // Encrypted asset value
+  readonly encryptedType: string; // Encrypted asset type
+  readonly recoveryProof: string; // ZK proof of recovery
+}
+
+export interface PenaltyEnforcement {
+  readonly penaltyId: string;
+  readonly targetNullifier: string; // Anonymous target identifier
+  readonly penaltyType: 'STAKE_REDUCTION' | 'TRUST_SCORE_PENALTY' | 'TEMPORARY_SUSPENSION' | 'PERMANENT_BAN';
+  readonly encryptedSeverity: string; // Encrypted penalty severity
+  readonly enforcementProof: string; // ZK proof penalty is justified
+  readonly appliedTimestamp: number;
+  readonly appealDeadline?: number;
+}
+
+export interface EncryptedInsuranceRecord {
+  readonly recordId: string;
+  readonly encryptedClaimAmount: string;
+  readonly encryptedClaimType: string;
+  readonly encryptedPayoutAmount: string;
+  readonly confidentialityProof: string; // ZK proof of confidentiality
+  readonly processingTimestamp: number;
+}
+
+export interface PrivateStakeCalculation {
+  readonly memberCommitment: string; // ZK commitment to member identity
+  readonly requiredStakeCommitment: string; // Commitment to required stake
+  readonly actualStakeProof: string; // ZK proof of actual stake adequacy
+  readonly trustScoreContribution: string; // Encrypted trust score impact
+  readonly riskAdjustment: string; // Encrypted risk-based adjustment
+  readonly calculationProof: string; // ZK proof calculation is correct
+}
+
+export interface RiskManagementParams {
+  readonly memberHash: string;
+  readonly circleId: string;
+  readonly assessmentType: 'STAKE_CALCULATION' | 'DEFAULT_DETECTION' | 'LIQUIDATION_ASSESSMENT' | 'PENALTY_EVALUATION';
+  readonly zkProof: string;
+  readonly encryptedData: string;
+}
+
 // Default privacy parameters for Midnight blockchain
 export const DEFAULT_PRIVACY_PARAMS = {
   zkSnarkParams: 'groth16-bn254',

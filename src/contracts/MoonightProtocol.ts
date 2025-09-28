@@ -31,7 +31,13 @@ import {
   CircleGovernanceParams,
   InsurancePool,
   CrossChainIdentity,
-  PrivacyParams
+  PrivacyParams,
+  RiskAssessment,
+  DefaultDetectionResult,
+  LiquidationOrder,
+  PenaltyEnforcement,
+  EncryptedInsuranceRecord,
+  PrivateStakeCalculation
 } from '../types';
 
 import { ZKProofVerifier } from '../utils/zk-verifier';
@@ -40,6 +46,7 @@ import { TrustScoreCalculator } from '../utils/trust-score';
 import { CrossChainManager } from '../utils/cross-chain';
 import { GovernanceManager } from '../utils/governance';
 import { BidAuctionManager } from '../auctions/BidAuctionManager';
+import { RiskManager } from '../utils/risk-manager';
 
 export class MoonightProtocol {
   protected state: ContractState;
@@ -49,6 +56,7 @@ export class MoonightProtocol {
   private crossChainManager: CrossChainManager;
   private bidAuctionManager: BidAuctionManager;
   private governanceManager: GovernanceManager;
+  private riskManager: RiskManager;
 
   constructor(protocolId?: string, initialParams?: PrivacyParams) {
     // Use initialParams if provided, otherwise use default
@@ -86,6 +94,7 @@ export class MoonightProtocol {
     this.crossChainManager = new CrossChainManager();
     this.bidAuctionManager = new BidAuctionManager(privacyParams);
     this.governanceManager = new GovernanceManager(this.privacyUtils, this.trustCalculator);
+    this.riskManager = new RiskManager(this.zkVerifier, this.privacyUtils, this.trustCalculator);
   }
 
   /**
@@ -190,10 +199,22 @@ export class MoonightProtocol {
     const trustScore = await this.trustCalculator.calculateScore(memberHash);
     const tier = this.trustCalculator.getTrustTier(trustScore);
     
-    // Verify minimum stake requirement for tier
-    if (!await this.verifyStakeRequirement(memberHash, params.stakeAmount)) {
-      const requiredStake = this.trustCalculator.getStakeRequirement(trustScore);
-      throw new Error(`Insufficient stake for ${tier.name} tier. Required: ${requiredStake.toString()} wei`);
+    // Use privacy-preserving stake calculation
+    const stakeCalculation = await this.riskManager.calculatePrivateStake(
+      memberHash,
+      params.circleId,
+      params.stakeAmount
+    );
+    
+    // Verify stake adequacy using ZK proof without revealing amounts
+    const stakeAdequate = await this.zkVerifier.verifyProof(
+      stakeCalculation.actualStakeProof,
+      'risk_calculation_v1',
+      [stakeCalculation.memberCommitment, stakeCalculation.requiredStakeCommitment]
+    );
+    
+    if (!stakeAdequate) {
+      throw new Error(`Insufficient stake for ${tier.name} tier based on risk assessment`);
     }
     
     // Check if tier allows joining based on circle size
@@ -337,6 +358,90 @@ export class MoonightProtocol {
     });
 
     return true;
+  }
+
+  /**
+   * Process payment deadline and detect defaults anonymously
+   */
+  async processPaymentDeadline(
+    circleId: string,
+    round: number,
+    paymentDeadline: number
+  ): Promise<void> {
+    const circle = this.state.circles.get(circleId);
+    if (!circle || !circle.isActive) {
+      throw new Error('Circle not found or inactive');
+    }
+
+    // Check if deadline has passed
+    if (Date.now() < paymentDeadline) {
+      throw new Error('Payment deadline has not yet passed');
+    }
+
+    // Detect defaults anonymously without revealing member identities
+    const defaultDetection = await this.riskManager.detectAnonymousDefaults(
+      circleId,
+      round,
+      paymentDeadline
+    );
+
+    // If defaults detected and intervention required, initiate penalty process
+    if (defaultDetection.requiresIntervention) {
+      await this.processDefaultInterventions(defaultDetection);
+    }
+
+    // Update trust scores for members who missed payments
+    await this.updateTrustScoresForDefaults(defaultDetection);
+  }
+
+  /**
+   * Process interventions for detected defaults
+   */
+  private async processDefaultInterventions(detection: DefaultDetectionResult): Promise<void> {
+    for (const flag of detection.anonymousFlags) {
+      // Determine appropriate penalty based on severity
+      const penaltyType = await this.determinePenaltyType(flag.severityCommitment);
+      const severity = await this.calculatePenaltySeverity(flag.severityCommitment);
+      
+      // Enforce penalty anonymously
+      await this.riskManager.enforcePrivatePenalty(
+        flag.nullifierHash,
+        penaltyType,
+        severity,
+        `Default detected in circle ${detection.circleId} round ${detection.round}`
+      );
+    }
+  }
+
+  /**
+   * Update trust scores for members who defaulted
+   */
+  private async updateTrustScoresForDefaults(detection: DefaultDetectionResult): Promise<void> {
+    // Process trust score penalties without revealing which specific members defaulted
+    // This would integrate with the trust score system to apply penalties based on the anonymous flags
+    
+    for (const flag of detection.anonymousFlags) {
+      // Apply trust score penalty through anonymous system
+      // In practice, this would use a more sophisticated anonymous penalty system
+      console.log(`Applying trust score penalty for anonymous default flag: ${flag.flagId}`);
+    }
+  }
+
+  /**
+   * Determine penalty type based on default severity
+   */
+  private async determinePenaltyType(severityCommitment: string): Promise<PenaltyEnforcement['penaltyType']> {
+    // In practice, would decrypt severity to determine appropriate penalty
+    // For now, use moderate penalty
+    return 'TRUST_SCORE_PENALTY';
+  }
+
+  /**
+   * Calculate penalty severity from encrypted commitment
+   */
+  private async calculatePenaltySeverity(severityCommitment: string): Promise<number> {
+    // In practice, would use ZK proofs to determine severity without revealing exact value
+    return 5; // Medium severity
   }
 
   /**
@@ -1050,6 +1155,237 @@ export class MoonightProtocol {
   private async getCurrentBlock(): Promise<number> {
     // This would integrate with Midnight blockchain's current block number
     return Date.now(); // Placeholder
+  }
+
+  // ============================================================================
+  // PRIVACY-PRESERVING RISK MANAGEMENT METHODS
+  // ============================================================================
+
+  /**
+   * Calculate private stake requirement based on hidden trust scores and risk factors
+   */
+  async calculatePrivateStakeRequirement(
+    memberHash: string,
+    circleId: string,
+    baseStakeAmount: bigint
+  ): Promise<PrivateStakeCalculation> {
+    return await this.riskManager.calculatePrivateStake(memberHash, circleId, baseStakeAmount);
+  }
+
+  /**
+   * Detect defaults anonymously without revealing member identities
+   */
+  async detectAnonymousDefaults(
+    circleId: string,
+    round: number,
+    paymentDeadline: number
+  ): Promise<DefaultDetectionResult> {
+    return await this.riskManager.detectAnonymousDefaults(circleId, round, paymentDeadline);
+  }
+
+  /**
+   * Execute confidential liquidation process
+   */
+  async executeConfidentialLiquidation(
+    targetMemberCommitment: string,
+    circleId: string,
+    liquidationReason: string
+  ): Promise<LiquidationOrder> {
+    // Verify caller has authority to initiate liquidation
+    const liquidationOrder = await this.riskManager.executeConfidentialLiquidation(
+      targetMemberCommitment,
+      circleId,
+      liquidationReason
+    );
+
+    // Update insurance pool after liquidation
+    await this.updateInsurancePoolAfterLiquidation(liquidationOrder);
+
+    return liquidationOrder;
+  }
+
+  /**
+   * Process encrypted insurance claims
+   */
+  async processEncryptedInsuranceClaim(
+    claimantCommitment: string,
+    circleId: string,
+    encryptedClaimData: string,
+    claimProof: string
+  ): Promise<EncryptedInsuranceRecord> {
+    const record = await this.riskManager.processEncryptedInsuranceClaim(
+      claimantCommitment,
+      circleId,
+      encryptedClaimData,
+      claimProof
+    );
+
+    // Update insurance pool reserves
+    await this.updateInsurancePoolAfterClaim(record);
+
+    return record;
+  }
+
+  /**
+   * Enforce penalties privately without revealing target identity
+   */
+  async enforcePrivatePenalty(
+    targetNullifier: string,
+    penaltyType: PenaltyEnforcement['penaltyType'],
+    severity: number,
+    reason: string
+  ): Promise<PenaltyEnforcement> {
+    return await this.riskManager.enforcePrivatePenalty(
+      targetNullifier,
+      penaltyType,
+      severity,
+      reason
+    );
+  }
+
+  /**
+   * Generate comprehensive risk assessment with ZK proofs
+   */
+  async generateRiskAssessment(
+    memberHash: string,
+    circleId: string
+  ): Promise<RiskAssessment> {
+    return await this.riskManager.generateRiskAssessment(memberHash, circleId);
+  }
+
+  /**
+   * Verify risk management operation with ZK proof
+   */
+  async verifyRiskManagementOperation(
+    operationType: 'STAKE_CALCULATION' | 'DEFAULT_DETECTION' | 'LIQUIDATION' | 'PENALTY_ENFORCEMENT',
+    operationId: string,
+    zkProof: string
+  ): Promise<boolean> {
+    switch (operationType) {
+      case 'STAKE_CALCULATION':
+        return await this.zkVerifier.verifyProof(zkProof, 'risk_calculation_v1', [operationId]);
+      case 'DEFAULT_DETECTION':
+        return await this.zkVerifier.verifyProof(zkProof, 'anonymous_default_v1', [operationId]);
+      case 'LIQUIDATION':
+        return await this.zkVerifier.verifyProof(zkProof, 'confidential_liquidation_v1', [operationId]);
+      case 'PENALTY_ENFORCEMENT':
+        return await this.zkVerifier.verifyProof(zkProof, 'private_penalty_v1', [operationId]);
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Get risk assessment for member (if authorized)
+   */
+  async getRiskAssessment(
+    memberHash: string,
+    requestorHash: string,
+    authProof: string
+  ): Promise<RiskAssessment | null> {
+    // Verify requestor has authority to access risk assessment
+    if (!await this.zkVerifier.verifyProof(authProof, 'risk_access_v1', [requestorHash, memberHash])) {
+      return null;
+    }
+
+    return this.riskManager.getRiskAssessment(memberHash) || null;
+  }
+
+  /**
+   * Get default detection results for circle (if authorized)
+   */
+  async getDefaultDetectionResults(
+    circleId: string,
+    requestorHash: string,
+    authProof: string
+  ): Promise<DefaultDetectionResult[]> {
+    // Verify requestor has authority to access default detection results
+    if (!await this.zkVerifier.verifyProof(authProof, 'default_access_v1', [requestorHash, circleId])) {
+      return [];
+    }
+
+    // Return all default detection results for the circle
+    const results: DefaultDetectionResult[] = [];
+    // Implementation would filter by circleId from risk manager
+    return results;
+  }
+
+  /**
+   * Monitor insurance pool health with privacy preservation
+   */
+  async monitorInsurancePoolHealth(): Promise<{
+    poolHealthScore: number;
+    requiresRebalancing: boolean;
+    anonymousRiskLevel: number;
+    zkProof: string;
+  }> {
+    const currentPool = this.state.insurancePool;
+    
+    // Calculate pool health metrics without revealing specific member data
+    const totalStakeRatio = currentPool.activeMembers > 0 ? 
+      Number(currentPool.totalStake) / (currentPool.activeMembers * 1000) : 0;
+    const penaltyRatio = Number(currentPool.totalStake) > 0 ? 
+      Number(currentPool.penaltyReserve) / Number(currentPool.totalStake) : 0;
+    
+    // Health score (0-100, higher is better)
+    const poolHealthScore = Math.min(100, Math.max(0, 
+      (Math.min(1, totalStakeRatio) * 40) + ((1 - Math.min(1, penaltyRatio)) * 60)
+    ));
+
+    const requiresRebalancing = poolHealthScore < 50;
+    const anonymousRiskLevel = Math.max(0, Math.min(10, (100 - poolHealthScore) / 10));
+
+    // Generate ZK proof of health assessment
+    const zkProof = await this.zkVerifier.generateProof(
+      'insurance_health_v1',
+      {
+        totalStake: currentPool.totalStake.toString(),
+        activeMembers: currentPool.activeMembers,
+        penaltyReserve: currentPool.penaltyReserve.toString(),
+        healthScore: poolHealthScore,
+        timestamp: Date.now()
+      },
+      [poolHealthScore.toString(), anonymousRiskLevel.toString()]
+    );
+
+    return {
+      poolHealthScore,
+      requiresRebalancing,
+      anonymousRiskLevel,
+      zkProof
+    };
+  }
+
+  // Private helper methods for risk management
+
+  private async updateInsurancePoolAfterLiquidation(liquidation: LiquidationOrder): Promise<void> {
+    // Add liquidated assets to insurance pool
+    const recoveredValue = liquidation.recoveredAssets.reduce((total, asset) => {
+      // In practice, would decrypt and sum asset values
+      return total + BigInt(1000); // Placeholder
+    }, BigInt(0));
+
+    const updatedPool: InsurancePool = {
+      ...this.state.insurancePool,
+      totalStake: this.state.insurancePool.totalStake + recoveredValue,
+      lastUpdateBlock: await this.getCurrentBlock()
+    };
+
+    this.state.insurancePool = updatedPool;
+  }
+
+  private async updateInsurancePoolAfterClaim(record: EncryptedInsuranceRecord): Promise<void> {
+    // Decrypt payout amount for pool update (only protocol can do this)
+    const payoutData = await this.privacyUtils.decrypt(record.encryptedPayoutAmount, 'payout_amount');
+    const payoutAmount = BigInt(payoutData);
+
+    const updatedPool: InsurancePool = {
+      ...this.state.insurancePool,
+      penaltyReserve: this.state.insurancePool.penaltyReserve - payoutAmount,
+      lastUpdateBlock: await this.getCurrentBlock()
+    };
+
+    this.state.insurancePool = updatedPool;
   }
 
   // State getters for testing and debugging

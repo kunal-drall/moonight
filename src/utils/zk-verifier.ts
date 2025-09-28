@@ -930,4 +930,99 @@ export class ZKProofVerifier {
 
     return results;
   }
+
+  /**
+   * Generic proof verification method for risk management operations
+   */
+  async verifyProof(
+    proof: string,
+    circuitName: string,
+    publicInputs: string[]
+  ): Promise<boolean> {
+    try {
+      const proofData = JSON.parse(proof);
+      
+      // Basic validation - in production would verify actual ZK proof
+      if (!proofData || typeof proofData !== 'object') {
+        return false;
+      }
+
+      // Verify circuit name matches
+      if (proofData.circuit && proofData.circuit !== circuitName) {
+        return false;
+      }
+
+      // Verify public inputs match
+      if (proofData.publicInputs && JSON.stringify(proofData.publicInputs) !== JSON.stringify(publicInputs)) {
+        return false;
+      }
+
+      // For demo purposes, accept proofs that have valid: true
+      return proofData.valid === true || proofData.zkProof?.valid === true;
+    } catch (error) {
+      console.error('Generic proof verification failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Generic proof generation method for risk management operations
+   */
+  async generateProof(
+    circuitName: string,
+    witnessData: any,
+    publicInputs: string[]
+  ): Promise<string> {
+    try {
+      // In production, this would generate actual ZK proofs
+      const proof = {
+        valid: true,
+        circuit: circuitName,
+        publicInputs,
+        witnessDataHash: await this.hashWitnessData(witnessData),
+        timestamp: Date.now(),
+        zkProof: {
+          valid: true,
+          proofType: 'groth16',
+          commitment: await this.generateCommitment(JSON.stringify(this.convertBigIntToString(witnessData))),
+          nullifier: witnessData.memberHash ? await this.generateNullifier(witnessData.memberHash) : null
+        }
+      };
+
+      return JSON.stringify(proof);
+    } catch (error) {
+      console.error('Proof generation failed:', error);
+      throw new Error('Failed to generate ZK proof');
+    }
+  }
+
+  /**
+   * Hash witness data for proof generation
+   */
+  private async hashWitnessData(witnessData: any): Promise<string> {
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256');
+    
+    // Convert BigInt values to strings for serialization
+    const serializable = this.convertBigIntToString(witnessData);
+    hash.update(JSON.stringify(serializable));
+    return hash.digest('hex');
+  }
+
+  /**
+   * Convert BigInt values to strings for JSON serialization
+   */
+  private convertBigIntToString(obj: any): any {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj === 'bigint') return obj.toString();
+    if (Array.isArray(obj)) return obj.map(item => this.convertBigIntToString(item));
+    if (typeof obj === 'object') {
+      const result: any = {};
+      for (const [key, value] of Object.entries(obj)) {
+        result[key] = this.convertBigIntToString(value);
+      }
+      return result;
+    }
+    return obj;
+  }
 }
