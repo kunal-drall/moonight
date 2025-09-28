@@ -656,4 +656,13 @@ export class TrustScoreCalculator {
       PREMIUM_FEATURES: this.TRUST_TIERS.LUNAR.minScore
     };
   }
+
+  /**
+   * Get trust score for a member (async for future database integration)
+   */
+  async getTrustScore(memberHash: string): Promise<number | null> {
+    // In a real implementation, this would fetch from the blockchain state
+    // For now, calculate a score based on the member hash
+    return await this.calculateScore(memberHash);
+  }
 }

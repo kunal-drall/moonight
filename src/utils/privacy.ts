@@ -231,16 +231,6 @@ export class PrivacyUtils {
   }
 
   /**
-   * Generate nullifier for double-spending prevention
-   */
-  async generateNullifier(secret: string): Promise<string> {
-    const crypto = require('crypto');
-    const hash = crypto.createHash('sha256');
-    hash.update(secret + this.params.nullifierDerivation);
-    return hash.digest('hex');
-  }
-
-  /**
    * Verify Merkle proof
    */
   async verifyMerkleProof(
@@ -363,5 +353,37 @@ export class PrivacyUtils {
     const hash = crypto.createHash('sha256');
     hash.update(left + right);
     return hash.digest('hex');
+  }
+
+  /**
+   * Generic encryption method for various data types
+   */
+  async encrypt(data: string, purpose: string): Promise<string> {
+    return await this.encryptData(data, purpose);
+  }
+
+  /**
+   * Generic decryption method for various data types
+   */
+  async decrypt(encryptedData: string, purpose: string): Promise<string> {
+    return await this.decryptData(encryptedData, purpose);
+  }
+
+  /**
+   * Generate nullifier hash from data and salt
+   */
+  async generateNullifier(data: string, salt?: string): Promise<string> {
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256');
+    const input = salt ? data + salt : data + this.params.nullifierDerivation;
+    hash.update(input);
+    return hash.digest('hex');
+  }
+
+  /**
+   * Generic hash function
+   */
+  async hash(data: string): Promise<string> {
+    return await this.hashSingle(data);
   }
 }
