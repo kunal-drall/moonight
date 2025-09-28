@@ -23,7 +23,7 @@ async function demoPrivateGovernance() {
     proofVerificationKey: 'verification-key-v1.0'
   };
 
-  const protocol = new MoonightProtocol(mockPrivacyParams);
+  const protocol = new MoonightProtocol('governance-demo', mockPrivacyParams);
 
   console.log('1. 🔧 Setting up mock lending circle...');
   

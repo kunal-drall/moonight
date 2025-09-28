@@ -17,6 +17,13 @@ export { AnonymityPoolManager } from './bridge/AnonymityPoolManager';
 export { TransactionMixer } from './bridge/TransactionMixer';
 export { CrossChainRouter } from './bridge/CrossChainRouter';
 
+// Confidential Payment Processor exports
+export { 
+  PaymentProcessor, 
+  PaymentCollector, 
+  MoonightPaymentProtocol 
+} from './payments';
+
 export * from './types';
 
 // Default privacy parameters for Midnight blockchain
@@ -46,7 +53,7 @@ export const DEFAULT_PRIVACY_PARAMS = {
 import { MoonightProtocol } from './contracts/MoonightProtocol';
 
 export function createMoonightProtocol(privacyParams = DEFAULT_PRIVACY_PARAMS) {
-  return new MoonightProtocol(privacyParams);
+  return new MoonightProtocol('default', privacyParams);
 }
 
 /**

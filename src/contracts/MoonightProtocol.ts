@@ -42,7 +42,7 @@ import { GovernanceManager } from '../utils/governance';
 import { BidAuctionManager } from '../auctions/BidAuctionManager';
 
 export class MoonightProtocol {
-  private state: ContractState;
+  protected state: ContractState;
   public zkVerifier: ZKProofVerifier;
   public privacyUtils: PrivacyUtils;
   public trustCalculator: TrustScoreCalculator;
@@ -50,7 +50,14 @@ export class MoonightProtocol {
   private bidAuctionManager: BidAuctionManager;
   private governanceManager: GovernanceManager;
 
-  constructor(initialParams: PrivacyParams) {
+  constructor(protocolId?: string, initialParams?: PrivacyParams) {
+    // Use initialParams if provided, otherwise use default
+    const privacyParams = initialParams || {
+      zkSnarkParams: 'groth16-bn254',
+      commitmentScheme: 'pedersen-blake2s',
+      nullifierDerivation: 'poseidon-hash',
+      proofVerificationKey: 'default-key'
+    };
     this.state = {
       circles: new Map(),
       members: new Map(),
@@ -70,14 +77,14 @@ export class MoonightProtocol {
         lastUpdateBlock: 0
       },
       crossChainIdentities: new Map(),
-      privacyParams: initialParams
+      privacyParams: privacyParams
     };
 
-    this.zkVerifier = new ZKProofVerifier(initialParams);
-    this.privacyUtils = new PrivacyUtils(initialParams);
+    this.zkVerifier = new ZKProofVerifier(privacyParams);
+    this.privacyUtils = new PrivacyUtils(privacyParams);
     this.trustCalculator = new TrustScoreCalculator();
     this.crossChainManager = new CrossChainManager();
-    this.bidAuctionManager = new BidAuctionManager(initialParams);
+    this.bidAuctionManager = new BidAuctionManager(privacyParams);
     this.governanceManager = new GovernanceManager(this.privacyUtils, this.trustCalculator);
   }
 
@@ -387,6 +394,34 @@ export class MoonightProtocol {
     const trustScore = this.state.trustScores.get(memberHash) || 0;
     const requiredStake = this.trustCalculator.getStakeRequirement(trustScore);
     return stakeAmount >= requiredStake;
+  }
+
+  /**
+   * Get circle information by ID
+   */
+  async getCircle(circleId: string): Promise<LendingCircle | undefined> {
+    return this.state.circles.get(circleId);
+  }
+
+  /**
+   * Get circle members
+   */
+  async getCircleMembers(circleId: string): Promise<CircleMember[]> {
+    const circle = this.state.circles.get(circleId);
+    if (!circle) {
+      throw new Error('Circle not found');
+    }
+
+    const members: CircleMember[] = [];
+    for (const [memberHash, member] of this.state.members) {
+      // Check if member belongs to this circle (simplified check)
+      // In production, would use proper membership verification
+      if (member.commitmentProof.includes(circleId)) {
+        members.push(member);
+      }
+    }
+
+    return members;
   }
 
   /**
